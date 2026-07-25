@@ -6,8 +6,9 @@ namespace FakeAR
 {
     /// <summary>
     /// カメラの向きをジャイロ姿勢に反映する。
-    /// Input SystemはWebGLの姿勢センサーに未対応（Gamepad/Joystickのみ対応）のため、
-    /// WebGLビルドではブラウザのDeviceOrientationEventを直接参照するjslibブリッジを使う。
+    /// WebGLビルドではレガシーInput.gyro（Unityエンジン組み込みのWebGL用実装）を使用する。
+    /// 新Input SystemのAttitudeSensorはWebGLの姿勢センサーに未対応（Gamepad/Joystickのみ対応）
+    /// のため使用しない。iOS Safariの許可リクエストのみ、タップ操作からjslib経由で明示的に呼ぶ。
     /// それ以外（エディタ等）ではAttitudeSensor、無ければWASDキーで代用する。
     /// </summary>
     public class GyroCameraController : MonoBehaviour
@@ -27,9 +28,8 @@ namespace FakeAR
         [DllImport("__Internal")] private static extern float DeviceOrientationBridge_GetAlpha();
         [DllImport("__Internal")] private static extern float DeviceOrientationBridge_GetBeta();
         [DllImport("__Internal")] private static extern float DeviceOrientationBridge_GetGamma();
-        [DllImport("__Internal")] private static extern float DeviceOrientationBridge_GetScreenOrientationAngle();
 
-        private bool webglListening;
+        private bool gyroStarted;
         private bool lastPermissionDenied;
 #endif
 
@@ -67,8 +67,11 @@ namespace FakeAR
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (result == "1")
             {
+                // 生のalpha/beta/gammaはデバッグ表示での突き合わせ用に取得しておく。
+                // カメラ回転自体はUnity組み込みのInput.gyroで駆動する。
                 DeviceOrientationBridge_StartListening();
-                webglListening = true;
+                Input.gyro.enabled = true;
+                gyroStarted = true;
             }
             else
             {
@@ -85,14 +88,16 @@ namespace FakeAR
             {
                 return "Gyro: 許可が拒否されました";
             }
-            if (!webglListening)
+            if (!gyroStarted)
             {
                 return "Gyro: 未開始（タップ待ち）";
             }
             float alpha = DeviceOrientationBridge_GetAlpha();
             float beta = DeviceOrientationBridge_GetBeta();
             float gamma = DeviceOrientationBridge_GetGamma();
-            return string.Format("Gyro有効 a={0:F0} b={1:F0} g={2:F0}", alpha, beta, gamma);
+            return string.Format(
+                "Input.gyro.enabled={0}\nraw(a={1:F0} b={2:F0} g={3:F0})",
+                Input.gyro.enabled, alpha, beta, gamma);
 #else
             if (attitudeSensor != null && attitudeSensor.enabled)
             {
@@ -105,13 +110,10 @@ namespace FakeAR
         private void Update()
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            if (webglListening)
+            if (gyroStarted && Input.gyro.enabled)
             {
-                float alpha = DeviceOrientationBridge_GetAlpha();
-                float beta = DeviceOrientationBridge_GetBeta();
-                float gamma = DeviceOrientationBridge_GetGamma();
-                float screenAngle = DeviceOrientationBridge_GetScreenOrientationAngle();
-                transform.rotation = DeviceOrientationToUnityRotation(alpha, beta, gamma, screenAngle);
+                Quaternion q = Input.gyro.attitude;
+                transform.rotation = new Quaternion(-q.x, -q.z, -q.y, q.w) * BaseOrientation;
                 return;
             }
 #endif
@@ -125,7 +127,7 @@ namespace FakeAR
             }
         }
 
-        // ジャイロの座標系（Z軸が奥・左手系）をUnityの座標系に変換する
+        // ジャイロの座標系（Z軸が奥・左手系）をUnityの座標系に変換する（新Input System版）
         private static Quaternion ConvertGyroRotation(Quaternion q)
         {
             return new Quaternion(q.x, q.y, -q.z, -q.w);
@@ -153,35 +155,5 @@ namespace FakeAR
 
             transform.rotation = Quaternion.Euler(editorPitch, editorYaw, 0f);
         }
-
-#if UNITY_WEBGL && !UNITY_EDITOR
-        // W3C DeviceOrientationEvent(alpha/beta/gamma)からUnityの回転への変換。
-        // three.jsのDeviceOrientationControlsと同一のアルゴリズムを移植し、
-        // 右手系→左手系の変換（z, w反転）をAttitudeSensor版と同様に適用している。
-        private static Quaternion DeviceOrientationToUnityRotation(float alphaDeg, float betaDeg, float gammaDeg, float screenAngleDeg)
-        {
-            float x = betaDeg * Mathf.Deg2Rad;
-            float y = alphaDeg * Mathf.Deg2Rad;
-            float z = -gammaDeg * Mathf.Deg2Rad;
-            float orient = screenAngleDeg * Mathf.Deg2Rad;
-
-            float c1 = Mathf.Cos(x * 0.5f), s1 = Mathf.Sin(x * 0.5f);
-            float c2 = Mathf.Cos(y * 0.5f), s2 = Mathf.Sin(y * 0.5f);
-            float c3 = Mathf.Cos(z * 0.5f), s3 = Mathf.Sin(z * 0.5f);
-
-            Quaternion qEuler = new Quaternion(
-                s1 * c2 * c3 + c1 * s2 * s3,
-                c1 * s2 * c3 - s1 * c2 * s3,
-                c1 * c2 * s3 - s1 * s2 * c3,
-                c1 * c2 * c3 + s1 * s2 * s3);
-
-            Quaternion qBack = new Quaternion(-0.70710678f, 0f, 0f, 0.70710678f);
-            Quaternion qScreen = new Quaternion(0f, 0f, Mathf.Sin(-orient * 0.5f), Mathf.Cos(-orient * 0.5f));
-
-            Quaternion qRaw = qEuler * qBack * qScreen;
-
-            return new Quaternion(qRaw.x, qRaw.y, -qRaw.z, -qRaw.w);
-        }
-#endif
     }
 }
