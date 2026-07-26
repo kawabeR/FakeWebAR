@@ -8,12 +8,18 @@ namespace FakeAR
     public class GyroPermissionButton : MonoBehaviour, IPointerClickHandler
     {
         [SerializeField] private GyroCameraController gyroCameraController;
+        [SerializeField] private MicrophoneVolumeController micVolumeController;
 
         public void OnPointerClick(PointerEventData eventData)
         {
             if (gyroCameraController != null)
             {
                 gyroCameraController.RequestGyroPermission();
+            }
+
+            if (micVolumeController != null)
+            {
+                micVolumeController.RequestMicPermission();
             }
 
             gameObject.SetActive(false);

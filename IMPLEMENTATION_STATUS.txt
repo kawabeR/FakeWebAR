@@ -1,0 +1,209 @@
+FakeWebAR 実装状態メモ
+====================
+
+## 概要
+
+Unity公式機能のみ(WebCamTexture, Canvas, レガシーInput.gyro)を使い、
+ARFoundation・WebXRを使わずに「疑似AR」を実現する実装。
+参考記事: note.com「無料で楽して必要最低限の疑似WebARをつくる」(kanesada2)。
+
+要件:
+1. リアルタイムカメラ映像の取得と背面表示
+2. 3Dオブジェクトのオーバーレイ
+3. 端末向き変化への追従(ジャイロ)
+
+実機(iPhone 12)でカメラ同期・ジャイロ同期・3Dオブジェクトのオーバーレイ表示・
+UIパネルの日本語文字表示・チェッカー床表示、すべて動作確認済み。
+
+現在は動作確認済みのSampleScene.unityをそのまま残しつつ、テスト用オブジェクト
+(ARDemoBallSpawner・ARDebugCheckerFloor)を除いたARScene.unityを新規作成し、
+そちらに本番用の3Dオブジェクトをユーザーが配置していく段階。
+
+さらに、マイク音量取得機能をARScene.unityから複製したMicVolumeScene.unityで
+プロトタイプ実装中(未実機検証)。
+
+
+## スクリプト構成 (Assets/Scripts/FakeAR/)
+
+### WebCamBackground.cs
+- RawImageにアタッチ。背面カメラを自動検出してWebCamTextureで取得・再生。
+- Android/WebGLでカメラ利用許可をリクエスト(Permission.Camera / Application.RequestUserAuthorization)。
+- 映像の回転(videoRotationAngle)・上下反転(videoVerticallyMirrored)を毎フレーム補正。
+- 対応する背面カメラが見つからない場合はdevices[0]にフォールバック。
+
+### GyroCameraController.cs
+- Main Cameraにアタッチ。
+- **WebGLビルド時**: レガシーUnityEngine.Input.gyroを使用してジャイロ姿勢を取得する。
+  新Input System(com.unity.inputsystem)はWebGL向けの姿勢センサー実装を持たない
+  (WebGL向けに実装されているのはGamepad/Joystickのみ)ため、そちらは使用しない。
+  回転の反映式: `transform.rotation = new Quaternion(-q.x, -q.z, -q.y, q.w) * Quaternion.Euler(90,0,0)`
+  (qはInput.gyro.attitude)。
+  iOS Safariでは、DeviceOrientationEvent自体へのアクセス許可がユーザー操作(タップ)を
+  トリガーに必要なため、DeviceOrientationBridge.jslib経由で許可リクエストを行い、
+  許可が下りてから`Input.gyro.enabled = true`にする(RequestGyroPermission() /
+  OnOrientationPermissionResult()、GyroPermissionButtonから呼び出される)。
+  jslibのGetAlpha/Beta/Gammaはブラウザの生値をデバッグ表示と突き合わせる用途にのみ使用し、
+  カメラ回転自体には使わない。
+- **それ以外(エディタ等)**: 新Input SystemのAttitudeSensorを使用、無ければ
+  KeyboardによるWASD操作でピッチ・ヨーを手動制御するフォールバック。
+- Project SettingsのActive Input Handlingは「Both」(レガシー・新Input Systemの両方使用可能)。
+
+### GyroPermissionButton.cs
+- 画面全体を覆う半透明パネル(PermissionPanel)にアタッチ。IPointerClickHandlerを実装し、
+  タップ時に GyroCameraController.RequestGyroPermission() を呼んでから自身を非表示にする。
+- WebGL以外のプラットフォームではRequestGyroPermission()は何もしない(呼び出し自体は安全)。
+- ラベル文言は「タップでAR有効化」。
+
+### Assets/Plugins/WebGL/DeviceOrientationBridge.jslib (WebGL専用ネイティブプラグイン)
+- DeviceOrientationBridge_NeedsPermission(): iOSのようにDeviceOrientationEvent.requestPermission
+  が存在する環境かどうかを判定。
+- DeviceOrientationBridge_RequestPermission(gameObjectName): requestPermission()を呼び、
+  結果を SendMessage(gameObjectName, "OnOrientationPermissionResult", "1"/"0") でC#へ通知。
+- DeviceOrientationBridge_StartListening(): window.addEventListener('deviceorientation', ...)を
+  登録し、最新のalpha/beta/gammaをwindowオブジェクトにキャッシュ(デバッグ表示用)。
+- DeviceOrientationBridge_GetAlpha/Beta/Gamma(): キャッシュ値をC#へ返す。
+
+### RandomBallSpawner.cs
+- 動作確認用のデモスクリプト。赤い球をカメラ前方のランダムな位置に一定間隔で生成し、
+  一定時間後に自動破棄する。
+
+### CheckerFloorGenerator.cs (動作確認用)
+- チェッカー柄(白/赤、cellsPerSide=8)のテクスチャをAwake()で動的生成し、
+  Unlitマテリアルとして貼り付ける。ライティングに依存しない。
+- ARDebugCheckerFloor(Planeプリミティブ)にアタッチ。3D合成・ジャイロでの視点変化を
+  実機で目視確認するための土台。
+
+### GyroDebugOverlay.cs (動作確認用)
+- GyroCameraController.GetDebugStatus()の内容とカメラの現在の回転(オイラー角)を
+  画面左上に常時テキスト表示する。
+
+### MicrophoneVolumeController.cs (プロトタイプ・未実機検証)
+- Main Cameraにアタッチ。マイク入力の音量(RMS、0〜1程度)を取得する。
+- **WebGLビルド時**: Assets/Plugins/WebGL/MicrophoneVolumeBridge.jslibを使用。
+  Web Audio API(getUserMedia + AnalyserNode)でマイクストリームを取得し、
+  window.__fakeARMicVolumeに毎フレームRMS値をキャッシュする。C#側は
+  MicrophoneVolumeBridge_GetVolume()で読み出す。マイクの利用許可も
+  ジャイロと同様ユーザー操作(タップ)を起点に要求する必要があるため、
+  RequestMicPermission()はGyroPermissionButtonのタップハンドラから
+  ジャイロ許可と同時に呼び出す(GyroPermissionButton.micVolumeControllerに配線)。
+- **それ以外(エディタ等)**: UnityのMicrophoneクラスでマイク入力を録音し、
+  直近サンプルからRMSを計算するフォールバック。
+
+### MicVolumeDebugOverlay.cs (プロトタイプ・未実機検証)
+- MicrophoneVolumeController.GetDebugStatus()の内容を画面にテキスト表示する。
+  GyroDebugOverlayと同じ構成。
+
+### ContinuousRotator.cs (プロトタイプ)
+- アタッチしたオブジェクトを毎フレーム一定角速度(degreesPerSecond)で回転させ続ける。
+- axis: 回転軸(任意方向のVector3)。rotationSpace: Space.World/Space.Self を選択可能
+  (Space.Selfの場合、axisはオブジェクト自身のローカル座標系での軸として解釈される)。
+- 軸を変更したいオブジェクトの向きの都合が悪い場合は、実際の回転軸の補正回転を
+  「MeshRoot」という中間の子オブジェクトに移し、回転対象自身のlocalRotationを
+  Identityにリセットする手法を使う(下記MicVolumeScene.unityの火星on参照)。
+  こうすることで見た目(メッシュの向き)を変えずに回転軸だけを補正できる。
+
+### OrbitAroundTransform.cs (プロトタイプ)
+- アタッチしたオブジェクトを、指定したpivot(Transform)を中心に一定角速度で公転させる。
+- worldAxis: 公転面の法線となる軸。ContinuousRotatorによる自転と併用可能
+  (同一オブジェクトに両方アタッチすれば自転しながら公転する)。
+
+### Assets/Fonts/NotoSansJP-UISubset.ttf
+- Unity組み込みの既定フォントは日本語グリフを含まないため、PermissionPanelのLabelと
+  GyroDebugTextの日本語表示にはこのフォントを使用する。Noto Sans JP(OFLライセンス)から
+  UI文言で使う文字のみを抽出したサブセット(約15KB)。今後、表示する日本語文字列を
+  追加する場合は、その文字を含めてフォントを再取得する必要がある。
+
+
+## シーン構成
+
+### Assets/Scenes/SampleScene.unity (動作確認済み・凍結)
+
+実機での動作確認がすべて完了した状態のまま保持。以後は変更しない基準シーン。
+
+- Main Camera
+  - Clear Flags: Solid Color (黒) / Near/Far Clip: 0.1 / 100
+  - GyroCameraController をアタッチ
+- ARBackgroundCanvas (Canvas)
+  - Render Mode: Screen Space - Camera (worldCamera = Main Camera)、Plane Distance: 15
+  - CanvasScaler: Scale With Screen Size (1080x1920基準)
+  - 子: WebCamRawImage (RawImage + AspectRatioFitter + WebCamBackground、全画面Stretch)
+- ARDemoBallSpawner: RandomBallSpawner をアタッチ、targetCamera = Main Camera
+- ARDebugCheckerFloor: position=(0,0,0), localScale=(10,1,10)、Colliderなし、
+  CheckerFloorGenerator をアタッチ
+- EventSystem: EventSystem + InputSystemUIInputModule
+  (Input System専用UIタップ検知のため、レガシーStandaloneInputModuleではなくこちらを使用)
+- GyroPermissionCanvas (Render Mode: Screen Space - Overlay、常に最前面)
+  - 子: PermissionPanel (全画面Stretch、Image黒0.75、GyroPermissionButtonをアタッチ、
+    gyroCameraController参照 = Main Camera)
+    - 子: Label (Text、日本語フォント、「タップでAR有効化」)
+  - 子: GyroDebugText (Text、日本語フォント、画面左上)
+
+### Assets/Scenes/ARScene.unity (本番用・作業中)
+
+SampleScene.unityをAssetDatabase.CopyAsset()で複製し、ARDemoBallSpawnerと
+ARDebugCheckerFloorのみを削除したもの。カメラ同期・ジャイロ制御・許可UI(EventSystem,
+ARBackgroundCanvas, GyroPermissionCanvas, Main CameraのGyroCameraController)は
+SampleScene.unityと同一構成のまま引き継いでいる。
+3Dオブジェクトはユーザーが手動で配置(現在アクティブなシーン)。
+- 火星 off: デフォルト以下に24個のメッシュ。OrbitAroundTransform(pivot=Main Camera,
+  axis=Y, 30deg/s)をアタッチ、公転のみ(自転のContinuousRotatorは削除済み)。
+- 火星 on: localRotation=(0,45,0)。子のx-axis/y-axis/z-axis配下にMeshRoot/Visualの
+  補正構造(見た目を変えずに軸を揃えるための中間オブジェクト)あり。OrbitAroundTransform
+  (pivot=Main Camera, axis=Y, 30deg/s)を火星 on自体にアタッチ、公転のみ
+  (x-axis/y-axis/z-axisにあった自転用ContinuousRotatorは削除済み)。
+- ContinuousRotator.csはプロジェクトに残っているが、現在シーン上のどのオブジェクトにも
+  アタッチされていない(ユーザーの指示により全て削除。今後別の方法で自転を実装する可能性あり)。
+
+Build Settingsへの追加(EditorBuildSettings.scenes)・WebGLビルド対象への切り替えは
+まだ行っていない。
+
+### Assets/Scenes/MicVolumeScene.unity (プロトタイプ・作業中)
+
+ARScene.unityを複製し、以下を追加したもの。
+- Main Camera: MicrophoneVolumeControllerを追加
+- GyroPermissionCanvas/PermissionPanel: GyroPermissionButton.micVolumeController に
+  Main CameraのMicrophoneVolumeControllerを配線(タップ時にジャイロ許可と同時に
+  マイク許可もリクエストする)
+- GyroPermissionCanvas/MicVolumeDebugText: GyroDebugTextを複製して作成、
+  MicVolumeDebugOverlayをアタッチし音量を画面表示
+- 火星 off: ユーザーが配置した3Dオブジェクト。OrbitAroundTransform(pivot=Main Camera,
+  axis=Y, 30deg/s、公転のみ)をアタッチ。
+- 火星 on: ユーザーが配置した3Dオブジェクト。回転コンポーネントは無し(静止)。
+  子のx-axis/y-axis/z-axisはメッシュがオブジェクト直下にある古い構造のままで、
+  ARScene.unity側で行った「MeshRoot」による軸補正はこちらには適用されていない。
+  ※ARScene.unityの火星off/onとは別の独立したコピーであり、内容が同期していない。
+
+Build Settingsへの追加・実機検証はまだ行っていない。
+
+
+## Player Settings (WebGL)
+
+- Compression Format: Brotli / Decompression Fallback: 有効
+  (GitHub PagesがContent-Encoding: brを返せないため、JS側フォールバックで解凍する)
+- Active Build Target: WebGL
+- Project Settings > Graphics > Always Included Shaders に
+  「Universal Render Pipeline/Unlit」を追加済み。CheckerFloorGeneratorが
+  コードのみからこのシェーダーを参照しており、追加しないとURPのシェーダー
+  ストリッピングでWebGLビルドから除外され、床が既定のグレー材質のままになる。
+
+
+## 公開状況 (GitHub Pages)
+
+リポジトリ: https://github.com/kawabeR/FakeWebAR.git (docs/ フォルダから配信)
+
+- `docs/` 直下 → https://kawaber.github.io/FakeWebAR/ (SampleScene.unityのビルド、既存)
+- `docs/ar-scene/` → https://kawaber.github.io/FakeWebAR/ar-scene/ (ARScene.unityのビルド)
+- `docs/mic-volume-scene/` → https://kawaber.github.io/FakeWebAR/mic-volume-scene/
+  (MicVolumeScene.unityのビルド)
+
+各シーンはBuildPlayerOptions.scenesで対象シーン1つのみを指定してビルドしており、
+Build Settings(EditorBuildSettings.scenes)自体は変更していない。
+
+
+## 既知の制約
+
+- 開発機に物理Webカメラが無い(WebCamTexture.devicesがVR/OBS仮想カメラしか検出しない)ため、
+  Editor Playモードでの実映像取得テストは未検証。実機(スマホ)では実際の背面カメラを使用する想定。
+- NewEmptyCSharpScript.cs (Assets/Scripts/) は本実装に使用していない、元からあった空スクリプト。
+- Editor上でPlayモードに入らずにシーンを見ても、CheckerFloorGeneratorのAwake()が
+  実行されないため床は既定のグレーのまま表示される(バグではない。Playモードに入る必要がある)。
