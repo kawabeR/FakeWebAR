@@ -83,7 +83,10 @@ namespace FakeAR
 
             if (aspectFitter != null && webCamTexture.height > 0)
             {
-                aspectFitter.aspectRatio = (float)webCamTexture.width / webCamTexture.height;
+                bool isRotated90 = webCamTexture.videoRotationAngle == 90 || webCamTexture.videoRotationAngle == 270;
+                aspectFitter.aspectRatio = isRotated90
+                    ? (float)webCamTexture.height / webCamTexture.width
+                    : (float)webCamTexture.width / webCamTexture.height;
             }
 
             // 端末の向き（縦横）に合わせて映像の回転・反転を補正

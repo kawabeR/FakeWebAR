@@ -30,6 +30,10 @@ UIパネルの日本語文字表示・チェッカー床表示、すべて動作
 - Android/WebGLでカメラ利用許可をリクエスト(Permission.Camera / Application.RequestUserAuthorization)。
 - 映像の回転(videoRotationAngle)・上下反転(videoVerticallyMirrored)を毎フレーム補正。
 - 対応する背面カメラが見つからない場合はdevices[0]にフォールバック。
+- AspectRatioFitterのaspectRatioは、videoRotationAngleが90/270(スマホでの典型値)の場合、
+  width/heightを入れ替えてから計算する。回転を考慮せず横長比率のまま渡すと、EnvelopeParent
+  設定の縦長画面に対して映像が大幅に拡大・トリミングされて見える不具合があったため修正した
+  (ARScene.unity/MicVolumeScene.unityで発覚。3シーンとも再ビルド済みで公開ビルドに反映済み)。
 
 ### GyroCameraController.cs
 - Main Cameraにアタッチ。
@@ -116,15 +120,17 @@ UIパネルの日本語文字表示・チェッカー床表示、すべて動作
 
 ## シーン構成
 
-### Assets/Scenes/SampleScene.unity (動作確認済み・凍結)
+### Assets/Scenes/SampleScene.unity (動作確認済み)
 
-実機での動作確認がすべて完了した状態のまま保持。以後は変更しない基準シーン。
+実機での基本動作(カメラ同期・ジャイロ同期・3Dオブジェクト・日本語UI・チェッカー床)は
+確認済み。ただしARBackgroundCanvasのPlane Distanceのみ、他シーンに合わせて15→25に
+変更した(以降このシーンも完全に凍結ではなく、共通設定の変更は反映する)。
 
 - Main Camera
   - Clear Flags: Solid Color (黒) / Near/Far Clip: 0.1 / 100
   - GyroCameraController をアタッチ
 - ARBackgroundCanvas (Canvas)
-  - Render Mode: Screen Space - Camera (worldCamera = Main Camera)、Plane Distance: 15
+  - Render Mode: Screen Space - Camera (worldCamera = Main Camera)、Plane Distance: 25
   - CanvasScaler: Scale With Screen Size (1080x1920基準)
   - 子: WebCamRawImage (RawImage + AspectRatioFitter + WebCamBackground、全画面Stretch)
 - ARDemoBallSpawner: RandomBallSpawner をアタッチ、targetCamera = Main Camera
@@ -143,23 +149,26 @@ UIパネルの日本語文字表示・チェッカー床表示、すべて動作
 SampleScene.unityをAssetDatabase.CopyAsset()で複製し、ARDemoBallSpawnerと
 ARDebugCheckerFloorのみを削除したもの。カメラ同期・ジャイロ制御・許可UI(EventSystem,
 ARBackgroundCanvas, GyroPermissionCanvas, Main CameraのGyroCameraController)は
-SampleScene.unityと同一構成のまま引き継いでいる。
+SampleScene.unityと同一構成のまま引き継いでいる。ARBackgroundCanvasのPlane Distanceは25。
+Screen Space - CameraのCanvasはPlane Distanceより奥にあるオブジェクトを覆い隠すため、
+ARオブジェクトはこの値より手前(カメラからの距離25未満)に配置する必要がある。
 3Dオブジェクトはユーザーが手動で配置(現在アクティブなシーン)。
 - 火星 off: デフォルト以下に24個のメッシュ。OrbitAroundTransform(pivot=Main Camera,
   axis=Y, 30deg/s)をアタッチ、公転のみ(自転のContinuousRotatorは削除済み)。
-- 火星 on: localRotation=(0,45,0)。子のx-axis/y-axis/z-axis配下にMeshRoot/Visualの
-  補正構造(見た目を変えずに軸を揃えるための中間オブジェクト)あり。OrbitAroundTransform
+- 火星 on: localRotation=(0,45,0)、カメラからの距離は約20.9(Plane Distance 25未満、
+  隠れない範囲)。子のx-axis/y-axis/z-axis配下にMeshRoot/Visualの補正構造
+  (見た目を変えずに軸を揃えるための中間オブジェクト)あり。OrbitAroundTransform
   (pivot=Main Camera, axis=Y, 30deg/s)を火星 on自体にアタッチ、公転のみ
   (x-axis/y-axis/z-axisにあった自転用ContinuousRotatorは削除済み)。
 - ContinuousRotator.csはプロジェクトに残っているが、現在シーン上のどのオブジェクトにも
   アタッチされていない(ユーザーの指示により全て削除。今後別の方法で自転を実装する可能性あり)。
 
-Build Settingsへの追加(EditorBuildSettings.scenes)・WebGLビルド対象への切り替えは
-まだ行っていない。
+Build Settingsへの追加(EditorBuildSettings.scenes)は行っていない
+(BuildPlayerOptions.scenesで対象シーン1つのみを指定してビルド)。
 
 ### Assets/Scenes/MicVolumeScene.unity (プロトタイプ・作業中)
 
-ARScene.unityを複製し、以下を追加したもの。
+ARScene.unityを複製し、以下を追加したもの。Plane Distanceも同様に25。
 - Main Camera: MicrophoneVolumeControllerを追加
 - GyroPermissionCanvas/PermissionPanel: GyroPermissionButton.micVolumeController に
   Main CameraのMicrophoneVolumeControllerを配線(タップ時にジャイロ許可と同時に
@@ -173,7 +182,7 @@ ARScene.unityを複製し、以下を追加したもの。
   ARScene.unity側で行った「MeshRoot」による軸補正はこちらには適用されていない。
   ※ARScene.unityの火星off/onとは別の独立したコピーであり、内容が同期していない。
 
-Build Settingsへの追加・実機検証はまだ行っていない。
+Build Settingsへの追加は行っていない。実機検証は未実施。
 
 
 ## Player Settings (WebGL)
@@ -198,6 +207,7 @@ Build Settingsへの追加・実機検証はまだ行っていない。
 
 各シーンはBuildPlayerOptions.scenesで対象シーン1つのみを指定してビルドしており、
 Build Settings(EditorBuildSettings.scenes)自体は変更していない。
+3シーンとも最新の状態(Plane Distance=25、火星onの距離調整後)で再ビルド・再公開済み。
 
 
 ## 既知の制約

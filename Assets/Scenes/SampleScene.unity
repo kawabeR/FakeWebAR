@@ -189,7 +189,7 @@ Canvas:
   serializedVersion: 3
   m_RenderMode: 1
   m_Camera: {fileID: 330585545}
-  m_PlaneDistance: 15
+  m_PlaneDistance: 25
   m_PixelPerfect: 0
   m_ReceivesEvents: 1
   m_OverrideSorting: 0
@@ -1138,6 +1138,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FakeAR.GyroPermissionButton
   gyroCameraController: {fileID: 330585548}
+  micVolumeController: {fileID: 0}
 --- !u!114 &1169343980
 MonoBehaviour:
   m_ObjectHideFlags: 0
