@@ -6,7 +6,9 @@ namespace FakeAR
     //
     // 円板の模様(リング)は、頂点のUVを中心からの実距離(半径)に比例させて割り当てることで、
     // 半径が伸縮しても模様1本あたりの間隔(ringsPerUnit)は変わらない。
-    // また模様はテクスチャオフセットを毎フレーム一定速度(scrollSpeed)でずらして流れさせており、
+    // 模様を流れさせる処理は、頂点UVのV値に毎フレーム一定速度(scrollSpeed)のオフセットを
+    // 直接加算することで実現している(Sprites/DefaultシェーダーはmainTextureOffsetを
+    // 参照しないため、material側のオフセットではなくUV自体を動かす必要がある)。
     // これも円板の半径とは独立した一定周期の動きになる。
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
     public class RippleDiscController : MonoBehaviour
@@ -19,11 +21,13 @@ namespace FakeAR
         [SerializeField] private int segments = 64;
         [SerializeField] private float ringsPerUnit = 2f;
         [SerializeField] private float scrollSpeed = 0.3f;
+        [SerializeField] private Color lineColor = new Color(0.4f, 0.85f, 1f);
 
         private Mesh mesh;
         private Vector3[] vertices;
         private Vector2[] uvs;
         private Material material;
+        private float scrollOffset;
 
         private void Awake()
         {
@@ -97,7 +101,8 @@ namespace FakeAR
             // レンダーパイプラインを問わず追加設定なしで透過表示できる
             material = new Material(Shader.Find("Sprites/Default"))
             {
-                mainTexture = texture
+                mainTexture = texture,
+                color = lineColor
             };
 
             GetComponent<Renderer>().material = material;
@@ -109,21 +114,19 @@ namespace FakeAR
             float t = Mathf.InverseLerp(volumeMin, volumeMax, volume);
             float radius = Mathf.Lerp(radiusMin, radiusMax, t);
 
+            scrollOffset += scrollSpeed * Time.deltaTime;
+
             for (int i = 0; i <= segments; i++)
             {
                 float angle = (float)i / segments * Mathf.PI * 2f;
                 int vi = i + 1;
                 vertices[vi] = new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
-                uvs[vi] = new Vector2((float)i / segments, radius * ringsPerUnit);
+                uvs[vi] = new Vector2((float)i / segments, radius * ringsPerUnit + scrollOffset);
             }
 
             mesh.vertices = vertices;
             mesh.uv = uvs;
             mesh.RecalculateBounds();
-
-            Vector2 offset = material.mainTextureOffset;
-            offset.y -= scrollSpeed * Time.deltaTime;
-            material.mainTextureOffset = offset;
         }
     }
 }
