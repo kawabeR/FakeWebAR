@@ -6058,8 +6058,8 @@ MonoBehaviour:
   micVolumeController: {fileID: 330585549}
   volumeMin: 0.01
   volumeMax: 0.1
-  overallSizeMultiplierMin: 1
-  overallSizeMultiplierMax: 2
+  overallSizeEndMin: 10
+  overallSizeEndMax: 20
 --- !u!1 &484466271
 GameObject:
   m_ObjectHideFlags: 0
