@@ -2252,7 +2252,7 @@ ParticleSystem:
     curve:
       serializedVersion: 2
       minMaxState: 1
-      scalar: 5
+      scalar: 1
       minScalar: 1
       maxCurve:
         serializedVersion: 2
@@ -6058,8 +6058,8 @@ MonoBehaviour:
   micVolumeController: {fileID: 330585549}
   volumeMin: 0.01
   volumeMax: 0.1
-  overallSizeMultiplierMin: 5
-  overallSizeMultiplierMax: 10
+  overallSizeMultiplierMin: 1
+  overallSizeMultiplierMax: 2
 --- !u!1 &484466271
 GameObject:
   m_ObjectHideFlags: 0

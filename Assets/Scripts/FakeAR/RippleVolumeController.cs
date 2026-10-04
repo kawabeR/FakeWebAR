@@ -11,8 +11,8 @@ namespace FakeAR
         [SerializeField] private MicrophoneVolumeController micVolumeController;
         [SerializeField] private float volumeMin = 0.01f;
         [SerializeField] private float volumeMax = 0.1f;
-        [SerializeField] private float overallSizeMultiplierMin = 5f;
-        [SerializeField] private float overallSizeMultiplierMax = 10f;
+        [SerializeField] private float overallSizeMultiplierMin = 1f;
+        [SerializeField] private float overallSizeMultiplierMax = 2f;
 
         private ParticleSystem ps;
 
