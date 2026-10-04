@@ -1501,7 +1501,7 @@ ParticleSystem:
     startSize:
       serializedVersion: 2
       minMaxState: 0
-      scalar: 0.5
+      scalar: 1
       minScalar: 1
       maxCurve:
         serializedVersion: 2
@@ -2248,7 +2248,7 @@ ParticleSystem:
       repeatInterval: 0.6
       probability: 1
   SizeModule:
-    enabled: 1
+    enabled: 0
     curve:
       serializedVersion: 2
       minMaxState: 1
@@ -6058,8 +6058,9 @@ MonoBehaviour:
   micVolumeController: {fileID: 330585549}
   volumeMin: 0.01
   volumeMax: 0.1
-  overallSizeEndMin: 10
-  overallSizeEndMax: 20
+  startRadius: 0.5
+  goalRadiusMin: 5
+  goalRadiusMax: 10
 --- !u!1 &484466271
 GameObject:
   m_ObjectHideFlags: 0
