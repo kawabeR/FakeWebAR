@@ -2245,7 +2245,7 @@ ParticleSystem:
           m_PostInfinity: 2
           m_RotationOrder: 4
       cycleCount: 0
-      repeatInterval: 0.6
+      repeatInterval: 2
       probability: 1
   SizeModule:
     enabled: 0
@@ -6061,6 +6061,7 @@ MonoBehaviour:
   startRadius: 0.5
   goalRadiusMin: 5
   goalRadiusMax: 10
+  updateInterval: 2
 --- !u!1 &484466271
 GameObject:
   m_ObjectHideFlags: 0
